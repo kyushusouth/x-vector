@@ -24,6 +24,13 @@ class extractor(nn.Module):
         self.second_fc = nn.Linear(256, 6)
         
     def forward(self, x):
+        """
+        x : (B, C, T)
+
+        return
+        x_vec : (B, C)
+        out : (B, C)
+        """
         # 畳み込み
         out = self.conv_layer(x)
 

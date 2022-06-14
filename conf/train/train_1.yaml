@@ -1,0 +1,16 @@
+# @package _group_
+
+# mlflow
+experiment_name : "test_x_vector"
+
+# dataloader
+batch_size : 30
+num_workers : 0
+
+# optimizer
+lr : 0.001
+beta_1 : 0.9
+beta_2 : 0.999
+
+# training
+max_epoch : 1

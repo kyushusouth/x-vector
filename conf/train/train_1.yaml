@@ -4,7 +4,7 @@
 experiment_name : "test_x_vector"
 
 # dataloader
-batch_size : 30
+batch_size : 64
 num_workers : 0
 
 # optimizer

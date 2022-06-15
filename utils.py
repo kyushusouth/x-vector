@@ -25,6 +25,12 @@ def get_centroids_prior(embeddings):
     return centroids
 
 def get_centroids(embeddings):
+    """
+    embeddings : (B, n_utterance, C)
+
+    return 
+    centroids : (B, C)
+    """
     centroids = embeddings.mean(dim=1)
     return centroids
 
@@ -45,8 +51,13 @@ def get_utterance_centroids(embeddings):
 
     Shape of embeddings should be:
         (speaker_ct, utterance_per_speaker_ct, embedding_size)
+
+    embeddings : (B, n_utterance, C)
+
+    return
+    centroids : (B, n_utterance, C)
     """
-    sum_centroids = embeddings.sum(dim=1)
+    sum_centroids = embeddings.sum(dim=1)   # (B, C)
     # we want to subtract out each utterance, prior to calculating the
     # the utterance centroid
     sum_centroids = sum_centroids.reshape(
@@ -70,10 +81,14 @@ def get_cossim_prior(embeddings, centroids):
     return cossim
 
 def get_cossim(embeddings, centroids):
+    """
+    embeddings : (B, n_utterance, C)
+    centroids : (B, C)
+    """
     # number of utterances per speaker
     num_utterances = embeddings.shape[1]
-    utterance_centroids = get_utterance_centroids(embeddings)
-
+    utterance_centroids = get_utterance_centroids(embeddings)   # (B, n_utterance, C)
+    
     # flatten the embeddings and utterance centroids to just utterance,
     # so we can do cosine similarity
     utterance_centroids_flat = utterance_centroids.view(
@@ -84,6 +99,7 @@ def get_cossim(embeddings, centroids):
         embeddings.shape[0] * num_utterances,
         -1
     )
+    
     # the cosine distance between utterance and the associated centroids
     # for that utterance
     # this is each speaker's utterances against his own centroid, but each

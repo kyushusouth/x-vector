@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 from mf_writer import MlflowWriter
 from model import extractor
 from dataset import x_vec_Dataset, x_vec_trans
-from loss import GE2ELoss
+# from loss import GE2ELoss
+from loss_another import GE2ELoss
 
 
 def make_train_loader(cfg):
@@ -52,7 +53,7 @@ def make_test_loader(cfg):
     return test_loader
 
 
-def train_one_epoch(model, train_loader, optimizer, loss_fn, device):
+def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, device):
     epoch_loss = 0
     data_cnt = 0
     iter_cnt = 0
@@ -62,7 +63,7 @@ def train_one_epoch(model, train_loader, optimizer, loss_fn, device):
         iter_cnt += 1
         print(f'iter {iter_cnt}/{all_iter}')
 
-        mel, label = batch
+        mel = batch
         mel = mel.to(device)
 
         batch_size = mel.shape[0]
@@ -70,9 +71,9 @@ def train_one_epoch(model, train_loader, optimizer, loss_fn, device):
 
         # 出力
         x_vec, out = model(mel)
-        breakpoint()
 
-        loss = loss_fn(x_vec)
+        # 損失
+        loss = loss_f_soft(x_vec) + loss_f_cont(x_vec)
 
         # 最適化
         loss.backward()
@@ -81,7 +82,7 @@ def train_one_epoch(model, train_loader, optimizer, loss_fn, device):
         epoch_loss += loss.item()
 
     # 平均
-    epoch_loss /= data_cnt
+    epoch_loss /= iter_cnt
     return epoch_loss
 
 
@@ -114,14 +115,15 @@ def main(cfg):
     # test_loader = make_test_loader(cfg)
 
     # 損失関数
-    loss_fn = GE2ELoss(device)
+    loss_f_soft = GE2ELoss(init_w=10.0, init_b=-5.0, loss_method='softmax') # for softmax loss
+    loss_f_cont = GE2ELoss(init_w=10.0, init_b=-5.0, loss_method='contrast') # for contrast loss
 
     # training
     with mlflow.start_run():
         model.train()
         for epoch in range(cfg.train.max_epoch):
             print(f"##### {epoch} #####")
-            epoch_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, device)
+            epoch_loss = train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, device)
             print(f"epoch_loss = {epoch_loss}")
             writer.log_metric("loss", epoch_loss)
 

@@ -40,9 +40,35 @@ class GE2ELoss(nn.Module):
         self.device = device
         
     def forward(self, embeddings):
+        """
+        embeddings : (B, n_utterance, C)
+        """
         torch.clamp(self.w, 1e-6)
-        centroids = get_centroids(embeddings)
-        cossim = get_cossim(embeddings, centroids)
-        sim_matrix = self.w*cossim.to(self.device) + self.b
+        # 発話に対して平均を取り、発話によらない話者性を表すcentroidsを得る
+        centroids = get_centroids(embeddings)   # (B, C)
+
+        # 話者、発話ごとのembeddingsと話者ごとのcentroidsの類似度行列を計算
+        cossim = get_cossim(embeddings, centroids)  # (B, n_utterance, B)
+        sim_matrix = self.w*cossim.to(self.device) + self.b     # (B, n_utterance, B)
+
+        # 損失
         loss, _ = calc_loss(sim_matrix)
         return loss
+
+
+def main():
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"device = {device}")
+
+    batch = 64
+    n_utterance = 10
+    channels = 256
+    embeddings = torch.rand(batch, n_utterance, channels)
+    loss_fn = GE2ELoss(device)
+    out = loss_fn(embeddings)
+    print(out)
+    return
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,7 @@
 # @package _group_
 
+name : tdnn
+
 #################################
 # data_info
 #################################
@@ -12,6 +14,9 @@ train_save_path :
 
 # generate.pyを実行したときのデータを保存するディレクトリまでのパス
 generate_save_path : 
+
+# 平均と標準偏差を保存するディレクトリまでのパス
+mean_std_path : "/users/minami/dataset/mean_std_x_vec"
 
 # audio_data
 fs : 16000

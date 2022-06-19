@@ -2,3 +2,5 @@ __pycache__/
 mlruns/
 outputs/
 conf/
+wandb/
+multirun/

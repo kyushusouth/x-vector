@@ -5,7 +5,7 @@ from torch.nn.utils import weight_norm
 
 
 class extractor(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, n_dim, out_channels):
         super().__init__()
 
         self.conv_layer = nn.Sequential(
@@ -26,8 +26,8 @@ class extractor(nn.Module):
         self.conv4 = weight_norm(nn.Conv1d(512, 512, kernel_size=1))
         self.conv5 = weight_norm(nn.Conv1d(512, 1500, kernel_size=1))
 
-        self.first_fc = nn.Linear(3000, 256)
-        self.second_fc = nn.Linear(256, 6)
+        self.first_fc = nn.Linear(3000, n_dim)
+        self.second_fc = nn.Linear(n_dim, out_channels)
         
     def forward(self, x):
         """

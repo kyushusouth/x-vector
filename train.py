@@ -161,9 +161,9 @@ def main(cfg):
 
     if cfg.train.debug:
         print('--- debug ---')
-        cfg.train.max_epoch = 5
-        cfg.train.batch_size = 5
-        cfg.train.n_utterance = 2
+        cfg.train.max_epoch = 10
+        cfg.train.batch_size = 16
+        cfg.train.n_utterance = 5
 
     # device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

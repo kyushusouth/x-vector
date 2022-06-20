@@ -208,6 +208,76 @@ class x_vec_Dataset(Dataset):
         return mel, speaker_label
 
 
+class x_vec_speechbrain_Dataset(Dataset):
+    def __init__(self, data_root, train, transform, cfg):
+        super().__init__()
+        self.train = train
+        self.trans = transform
+        self.cfg = cfg
+
+        self.speakers = get_speakers(data_root)
+        self.len = len(self.speakers)
+        self.mean, self.std = calc_mean_std(self.speakers, self.cfg)
+
+        print(f"data : {self.len}")
+
+    def __len__(self):
+        return self.len
+
+    def __getitem__(self, idx):
+        """
+        return 
+        """
+        speaker = self.speakers[idx]
+        speaker_label = Path(speaker).stem
+
+        # ted-lium
+        if speaker.endswith(".sph"):
+            audio_path = speaker
+            wav, fs = torchaudio.backend.soundfile_backend.load(audio_path)
+
+            # fsを16kHzに変換
+            wav = F.resample(
+                waveform=wav,
+                orig_freq=fs,
+                new_freq=self.cfg.model.fs,
+            )
+
+            utterance_len = self.cfg.model.length    # 1発話の長さ
+            n_utterance = self.cfg.train.n_utterance     # 総発話数
+
+            # 適当に3秒分の発話を総発話数分だけ取得するためのindex
+            idx = torch.randint(0, wav.shape[1] - utterance_len * n_utterance, (n_utterance,))
+            wav_save = []
+            for i in idx:
+                wav_utterance = wav[:, i:i + utterance_len]
+                wav_save.append(self.trans(wav_utterance, self.mean,self.std, self.train))
+        
+        # librispeech
+        else:
+            audio_path = get_dataset_libri(speaker, self.train, self.cfg)
+            wav_save = []
+            for i in range(len(audio_path)):
+                wav, fs = torchaudio.backend.soundfile_backend.load(audio_path[i])
+
+                # fsを16kHzに変換
+                wav = F.resample(
+                    waveform=wav,
+                    orig_freq=fs,
+                    new_freq=self.cfg.model.fs,
+                )
+
+                wav_save.append(self.trans(wav))
+
+        assert len(wav_save) == self.cfg.train.n_utterance
+        wav = torch.zeros(self.cfg.train.n_utterance, wav_save[0].shape[0], wav_save[0].shape[1])
+        for i in range(len(wav_save)):
+            wav[i] = wav_save[i]
+
+        return wav, speaker_label
+        
+
+
 class x_vec_trans:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -300,3 +370,14 @@ class x_vec_trans:
         # 音声をメルスペクトログラムに変換
         mel = self.wav2mel(wav)     
         return mel.squeeze(0)
+
+
+class x_vec_speechbrain_trans(x_vec_trans):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        
+        
+    def __call__(self, wav, mean, std, train):
+        wav = self.time_adjust(wav)
+        wav = self.normalize(wav, mean, std)
+        return wav

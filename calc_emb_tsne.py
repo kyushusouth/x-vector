@@ -11,14 +11,16 @@ import torch
 
 @hydra.main(config_name="config", config_path="conf")
 def main(cfg):
-    embeddings = np.load(os.path.join(cfg.train.emb_save_path, 'emb.npy'))
+    embeddings = np.load(os.path.join(cfg.train.emb_save_path, '2022:06:19_18-25-21/emb.npy'))
     n_speaker, n_utterance, _ = embeddings.shape
     print(embeddings.shape)
 
     tsne = TSNE(n_components=2, learning_rate='auto')
+
+    n_speaker = 10
     embeddings_tsne = np.zeros((n_speaker, n_utterance, 2))
 
-    for i in tqdm(range(embeddings.shape[0])):
+    for i in tqdm(range(10)):
         embedding = tsne.fit_transform(embeddings[i])
         embeddings_tsne[i] = embedding
 
@@ -37,7 +39,7 @@ def main(cfg):
     
 @hydra.main(config_name="config", config_path="conf")
 def plot_tsne(cfg):
-    embeddings = np.load(os.path.join(cfg.train.emb_save_path, 'emb.npy'))
+    embeddings = np.load(os.path.join(cfg.train.emb_save_path, '2022:06:19_18-25-21/emb.npy'))
     print(embeddings.shape)
     n_speaker, n_utterance, n_dim = embeddings.shape
 
@@ -53,7 +55,7 @@ def plot_tsne(cfg):
     for i in range(n_speaker - 1):
         similarity = cos(embeddings[i, :, :], embeddings[i+1, :, :])
         print(torch.mean(similarity))
-        breakpoint()
+        
 
     
 
@@ -61,5 +63,5 @@ def plot_tsne(cfg):
 
 
 if __name__ == "__main__":
-    # main()
-    plot_tsne()
+    main()
+    # plot_tsne()

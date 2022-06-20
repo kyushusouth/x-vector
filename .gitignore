@@ -4,3 +4,4 @@ outputs/
 conf/
 wandb/
 multirun/
+dataset/

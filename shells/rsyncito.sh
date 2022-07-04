@@ -61,7 +61,7 @@ USR_DIRNAME='usr4'  # usr数字; 例: usr4
 dir_local_raw=$(dirname $(cd $(dirname $0); pwd))
 dir_name=`echo "${dir_local_raw}" | sed -e 's/.*\/\([^\/]*\)$/\1/'`
 dir_local="${dir_local_raw}/"
-dir_remote="ito:/home/${USR_DIRNAME}/${USER_NAME}/Projects/${dir_name}/"
+dir_remote="ito:/home/${USR_DIRNAME}/${USER_NAME}/${dir_name}/"
 
 # Development directory -> Server directory
 # Usage: ` ./rsyncito.sh dev2svr `
@@ -94,7 +94,9 @@ elif [ "$1" = 'svr2dev' ]; then
         --exclude='.env' \
         --exclude='.DS_Store' --exclude='Thumbs.db' \
         --exclude='.git' --exclude='.gitignore' \
-        --exclude='__pycache__' --exclude='*.pyc' --exclude='.ipynb_checkpoints' --exclude='.pytest_cache/'
+        --exclude='__pycache__' --exclude='*.pyc' --exclude='.ipynb_checkpoints' --exclude='.pytest_cache/' \
+        --exclude='check_point/' --exclude='multirun/' --exclude='outputs/' --exclude='*.pth' --exclude='wandb'\
+        --exclude='*.cpt' --exclude='*.ckpt' --exclude='result/' --exclude='dataset/' # --exclude='conf/'
 
 # Server directory -> Any directory
 # Usage: ` ./rsyncito.sh svr2any your/target/directory/path/ `

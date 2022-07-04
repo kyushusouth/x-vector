@@ -4,3 +4,5 @@ outputs/
 conf/
 wandb/
 multirun/
+shells/
+checkpoint/

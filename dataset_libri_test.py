@@ -3,6 +3,7 @@
 話者数がバッチサイズとして指定されればいい
 """
 
+
 import hydra
 import torch
 import os
@@ -16,7 +17,6 @@ import torchaudio.functional as F
 import torchaudio.transforms as T
 from torch.utils.data import Dataset, DataLoader
 import audiomentations
-from data_process.feature import wave2mel, wav2world
 
 
 def get_speakers(data_root):    
@@ -44,7 +44,7 @@ def get_speakers(data_root):
         elif Path(curdir).name == "train-other-500":
             for speaker in dir:
                 speakers.append(os.path.join(curdir, speaker))
-    # return speakers
+    return speakers
     # ted-liumの読み込み
     data_root_ted = os.path.join(data_root, "TEDLIUM_release-3/data/sph")
     for curdir, dir, files in os.walk(data_root_ted):
@@ -62,7 +62,7 @@ def get_dataset_libri(speaker, train, cfg):
 
     for curdir, dir, files in os.walk(speaker):
         for file in files:
-            if file.endswith(".flac"):
+            if file.endswith(".npy"):
                 audio_path.append(os.path.join(curdir, file))
                 # label = Path(audio_path).parents[1].stem
     # if train:
@@ -73,14 +73,14 @@ def get_dataset_libri(speaker, train, cfg):
     return audio_path
 
 
-def calc_mean_std(speakers, cfg):
+def calc_mean_std(speakers, cfg, device):
     """
     speakers : 全話者のパスのリスト
 
     ここは一回求めた値を何回も使ったほうが良さそう
     """
     try:
-        npz_key = np.load(f'{cfg.train.mean_std_path}/{cfg.model.name}.npz')
+        npz_key = np.load(f'{cfg.train.mean_std_path}/mean_std_8000.npz')
         mean = torch.from_numpy(npz_key['mean'])
         std = torch.from_numpy(npz_key['std'])
     except:
@@ -97,21 +97,27 @@ def calc_mean_std(speakers, cfg):
             else:
                 for curdir, dir, files in os.walk(speaker):
                     for file in files:
-                        if file.endswith(".flac"):
+                        # if file.endswith(".flac"):
+                        #     audio_path.append(os.path.join(curdir, file))
+                        if file.endswith(".npy"):
                             audio_path.append(os.path.join(curdir, file))
 
         # 平均、標準偏差を計算
         print("--- calc mean and std ---")
         for i in tqdm(range(len(audio_path))):
-            wav, fs = torchaudio.backend.soundfile_backend.load(audio_path[i])
-            
-            # fsを16kHzに変換
+            # wav, fs = torchaudio.backend.soundfile_backend.load(audio_path[i])
+
+            # 16kHzで出てくる（今度はfsもまとめたnpzで保存すべき）
+            wav = np.load(audio_path[i])
+            wav = torch.from_numpy(wav).unsqueeze(0).to(device)
+
+            # fsを8kHzに変換
             wav = F.resample(
                 waveform=wav,
-                orig_freq=fs,
+                orig_freq=16000,
                 new_freq=cfg.model.fs,
             )
-
+            
             # 時間方向に平均、標準偏差を計算
             mean += torch.mean(wav, dim=1)
             std += torch.std(wav, dim=1)
@@ -123,23 +129,24 @@ def calc_mean_std(speakers, cfg):
         mean /= len(audio_path)
         std /= len(audio_path)
         np.savez(
-            f'{cfg.train.mean_std_path}/{cfg.model.name}',
-            mean=mean,
-            std=std
+            f'{cfg.train.mean_std_path}/mean_std_8000',
+            mean=mean.to('cpu').detach().numpy().copy(),
+            std=std.to('cpu').detach().numpy().copy(),
         )
     return mean, std
 
 
 class x_vec_Dataset(Dataset):
-    def __init__(self, data_root, train, transform, cfg):
+    def __init__(self, data_root, train, transform, cfg, device):
         super().__init__()
         self.train = train
         self.trans = transform
         self.cfg = cfg
+        self.device = device
 
         self.speakers = get_speakers(data_root)
         self.len = len(self.speakers)
-        self.mean, self.std = calc_mean_std(self.speakers, self.cfg)
+        self.mean, self.std = calc_mean_std(self.speakers, self.cfg, self.device)
 
         print(f"data : {self.len}")
 
@@ -153,7 +160,6 @@ class x_vec_Dataset(Dataset):
         """
         # [audio_path, label] = self.items[idx]
         speaker = self.speakers[idx]
-
         speaker_label = Path(speaker).stem
 
         # ted-lium
@@ -185,15 +191,25 @@ class x_vec_Dataset(Dataset):
             mel_save = []
 
             for i in range(len(audio_path)):
-                wav, fs = torchaudio.backend.soundfile_backend.load(audio_path[i])
+                # wav, fs = torchaudio.backend.soundfile_backend.load(audio_path[i])
 
-                # fsを16kHzに変換
+                # # fsを16kHzに変換
+                # wav = F.resample(
+                #     waveform=wav,
+                #     orig_freq=fs,
+                #     new_freq=self.cfg.model.fs,
+                # )
+                
+                wav = np.load(audio_path[i])
+                wav = torch.from_numpy(wav).unsqueeze(0)
+
+                # fsを8kHzに変換
                 wav = F.resample(
                     waveform=wav,
-                    orig_freq=fs,
+                    orig_freq=16000,
                     new_freq=self.cfg.model.fs,
                 )
-
+                
                 # メルスペクトログラムに変換
                 mel_save.append(self.trans(wav, self.mean, self.std, self.train))
 
@@ -277,6 +293,7 @@ class x_vec_speechbrain_Dataset(Dataset):
         return wav, speaker_label
         
 
+
 class x_vec_trans:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -290,6 +307,7 @@ class x_vec_trans:
             f_max=cfg.model.f_max,
             n_mels=cfg.model.n_mels,
         )
+        print(cfg.train.musan_path)
         self.add_noise = audiomentations.AddBackgroundNoise(
             sounds_path=os.path.join(cfg.train.musan_path, 'noise'),
             min_snr_in_db=0,
@@ -313,6 +331,11 @@ class x_vec_trans:
             leave_length_unchanged=True,
             p=0.5,
         )
+        # self.trans = audiomentations.Compose([
+        #     audiomentations.Gain(min_gain_in_db=-6, max_gain_in_db=6, p=0.5),
+        #     audiomentations.AddBackgroundNoise(sounds_path=cfg.train.noise_path, min_snr_in_db=3, max_snr_in_db=20, p=0.5),
+        #     audiomentations.ApplyImpulseResponse(ir_path=cfg.train.ir_path, leave_length_unchanged=True, p=0.5),
+        # ])
 
     def time_adjust(self, wav):
         if wav.shape[1] <= self.length:
@@ -364,11 +387,6 @@ class x_vec_trans:
         # 音声をメルスペクトログラムに変換
         mel = self.wav2mel(wav)     
         return mel.squeeze(0)
-
-
-class x_vec_trans_val(x_vec_trans):
-    def __init__(self, cfg):
-        super().__init__(self, cfg)
 
 
 class x_vec_speechbrain_trans(x_vec_trans):

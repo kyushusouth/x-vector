@@ -1,0 +1,39 @@
+---
+
+name : mspec
+
+#################################
+# data_info
+#################################
+# audio_data
+fs : 16000
+n_fft : 640
+hop_length : 160
+win_length : 640
+f_min : 0
+f_max : 7600
+n_mel : 80
+# n_fft : 320   # 25ms
+# hop_length : 80    # 10ms
+# win_length : 320
+# f_min : 70
+# f_max : 3700
+# n_mels : 840
+
+# frame period(lip2spと同じ)
+frame_period : 10
+
+# 学習に使用する音声サンプル数
+length : 48000    # 3s
+
+#################################
+# model_info
+#################################
+# in_channels
+in_channels : 80
+
+# x_vector_dim
+n_dim : 512
+
+# out_channels 
+out_channels : 6

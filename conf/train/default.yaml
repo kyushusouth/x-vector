@@ -1,0 +1,49 @@
+---
+
+# debug
+debug : False
+debug_max_epoch : 10
+
+# データを置いているディレクトリまでのパス
+data_path : "/home/usr4/r70264c/dataset/sv/wav_files"
+
+# インパルス応答 data augmentation
+ir_path : "/home/usr4/r70264c/dataset/ir/wav_files/simulated_rirs_16k"
+
+# ノイズ data augmentation
+musan_path : "/home/usr4/r70264c/dataset/musan/wav_files/musan"
+
+# 学習したモデルのパラメータを保存するディレクトリまでのパス
+save_path : "/home/usr4/r70264c/x_vector/result/train"
+
+# checkpoint
+ckpt_path : "/home/usr4/r70264c/x_vector/checkpoint"
+ckpt_step : 10
+
+# x-vectorのenpfilesを保存
+emb_save_path : "/users/minami/result/x_vec/generate"
+
+# dataloader
+batch_size : 64   # n_speaker
+num_workers : 8
+
+# 発話数
+n_utterance : 10
+
+# optimizer
+lr : 0.001
+beta_1 : 0.9
+beta_2 : 0.999
+weight_decay : 1.0e-6
+
+# 学習率の減衰率
+lr_decay_rate : 0.5
+
+# gradient clipping
+max_norm : 3.0
+
+# training
+max_epoch : 100
+
+# validationを計算する間隔
+val_step : 5

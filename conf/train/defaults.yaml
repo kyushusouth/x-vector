@@ -1,0 +1,54 @@
+---
+
+# mlflow
+experiment_name : "test_x_vector1"
+
+# データを置いているディレクトリまでのパス
+train_path : "/Volumes/TOSHIBA_EXT"
+test_path : 
+
+# インパルス応答 data augmentation
+ir_path : "/volumes/toshiba_ext/rirs_noises/simulated_rirs"
+
+# ノイズ data augmentation
+musan_path : "/volumes/toshiba_ext/musan"
+
+# 学習したモデルのパラメータを保存するディレクトリまでのパス
+train_save_path : "/Users/minami/result/x_vec/train"
+
+# generate.pyを実行したときのデータを保存するディレクトリまでのパス
+generate_save_path : 
+
+# 平均と標準偏差を保存するディレクトリまでのパス
+mean_std_path : "/users/minami/dataset/np_files/mean_std_x_vec"
+
+# npfilesを保存
+emb_save_path : "/users/minami/result/x_vec/generate"
+
+# dataloader
+batch_size : 64   # n_speaker
+num_workers : 0
+
+# 発話数
+n_utterance : 10
+
+# optimizer
+lr : 0.001
+beta_1 : 0.9
+beta_2 : 0.999
+weight_decay : 1.0e-6
+
+# 学習率の減衰率
+lr_decay_rate : 0.5
+
+# gradient clipping
+max_norm : 3.0
+
+# training
+max_epoch : 5
+
+# validationを計算する間隔
+val_step : 5
+
+# debug
+debug : True

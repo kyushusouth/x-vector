@@ -1,0 +1,4 @@
+defaults: 
+ - model: mspec
+ - train: default
+ - wandb : default

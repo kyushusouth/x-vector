@@ -1,0 +1,31 @@
+---
+
+name : tdnn
+
+#################################
+# data_info
+#################################
+# audio_data
+fs : 16000
+n_fft : 640   # 25ms
+hop_length : 160    # 10ms
+win_length : 640
+f_min : 0
+f_max : 7600
+n_mels : 40
+
+# 学習に使用する音声サンプル数
+length : 48000    # 3s
+
+
+#################################
+# model_info
+#################################
+# in_channels
+in_channels : 40
+
+# x_vector_dim
+n_dim : 256
+
+# out_channels 
+out_channels : 6

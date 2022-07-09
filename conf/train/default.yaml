@@ -5,7 +5,7 @@ debug : False
 debug_max_epoch : 10
 
 # データを置いているディレクトリまでのパス
-data_path : "/home/usr4/r70264c/dataset/sv/wav_files"
+data_path : "/home/usr4/r70264c/dataset_share/sv/wav_files"
 
 # インパルス応答 data augmentation
 ir_path : "/home/usr4/r70264c/dataset/ir/wav_files/simulated_rirs_16k"
@@ -19,9 +19,6 @@ save_path : "/home/usr4/r70264c/x_vector/result/train"
 # checkpoint
 ckpt_path : "/home/usr4/r70264c/x_vector/checkpoint"
 ckpt_step : 10
-
-# x-vectorのenpfilesを保存
-emb_save_path : "/users/minami/result/x_vec/generate"
 
 # dataloader
 batch_size : 64   # n_speaker

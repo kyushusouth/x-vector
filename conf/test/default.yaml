@@ -1,0 +1,10 @@
+---
+
+# data_path
+data_path : "/home/usr4/r70264c/dataset_share/sv/wav_files/test"
+
+# save_path
+save_path : "/home/usr4/r70264c/x_vector/result/generate"
+
+# iteration
+num_iter : 10

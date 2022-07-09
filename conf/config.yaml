@@ -1,4 +1,5 @@
 defaults: 
  - model: mspec
  - train: default
+ - test: default
  - wandb : default

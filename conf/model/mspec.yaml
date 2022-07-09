@@ -33,7 +33,7 @@ length : 48000    # 3s
 in_channels : 80
 
 # x_vector_dim
-n_dim : 512
+n_dim : 256
 
 # out_channels 
 out_channels : 6

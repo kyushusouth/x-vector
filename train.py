@@ -1,6 +1,20 @@
+"""
+使用方法
+1. conf/trainのパス変更
+    data_path以外を変更してください
 
-from sched import scheduler
-from threading import currentThread
+2. wandb.loginの変更
+
+3. train.pyの実行
+    学習したパラメータはcheckpointディレクトリに保存されていきます
+    最終的な結果はresult/trainに保存されます
+
+4. visualize.pyの実行
+    ここで学習したパラメータをロードし,tsneを保存できるようにしています
+    tnse.pngという名前でresult/generateに保存されると思います
+"""
+
+
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import mlflow
@@ -12,14 +26,18 @@ import os
 from tqdm import tqdm
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torchaudio.transforms as T
 from torch.utils.data import DataLoader
 from torch.nn.utils import clip_grad_norm_
 import random
+from scipy.interpolate import interp1d
+from scipy.optimize import brentq
+from sklearn.metrics import roc_curve
 
 from mf_writer import MlflowWriter
 from model.model import TDNN
-from dataset_remake import GE2EDataset, MySubset, GE2Etrans, GE2Etrans_val
+from dataset_remake import GE2EDataset, MySubset, GE2Etrans
 from loss_another import GE2ELoss
 
 # wandbへのログイン
@@ -52,12 +70,25 @@ def make_train_val_loader(data_path, cfg, device):
         musan_path=cfg.train.musan_path,
         ir_path=cfg.train.ir_path,
         cfg=cfg,
+        calc_eer=False,
     )
-    trans_val = GE2Etrans_val(
-        musan_path=cfg.train.musan_path,
-        ir_path=cfg.train.ir_path,
+    trans_val = GE2Etrans(
+        musan_path=None,
+        ir_path=None,
         cfg=cfg,
+        calc_eer=False,
     )
+    trans_eer = GE2Etrans(
+        musan_path=None, 
+        ir_path=None,
+        cfg=cfg,
+        calc_eer=True,
+    )
+    # trans_val = GE2Etrans_val(
+    #     musan_path=cfg.train.musan_path,
+    #     ir_path=cfg.train.ir_path,
+    #     cfg=cfg,
+    # )
 
     # 元となるデータセットの作成(transformは必ずNoneでお願いします)
     dataset = GE2EDataset(
@@ -65,7 +96,6 @@ def make_train_val_loader(data_path, cfg, device):
         name=cfg.model.name,
         transform=None,
         n_utterance=cfg.train.n_utterance,
-        train=True,
     )
 
     # 学習用と検証用にデータセットを分割
@@ -81,6 +111,18 @@ def make_train_val_loader(data_path, cfg, device):
         dataset=dataset,
         indices=indices[train_size:],
         transform=trans_val,
+    )
+
+    # EER計算用のデータセットも作成
+    train_dataset_eer = MySubset(
+        dataset=dataset,
+        indices=indices[:train_size],
+        transform=trans_eer,
+    )
+    val_dataset_eer = MySubset(
+        dataset=dataset,
+        indices=indices[train_size:],
+        transform=trans_eer,
     )
 
     # それぞれのdata loaderを作成
@@ -102,7 +144,25 @@ def make_train_val_loader(data_path, cfg, device):
         drop_last=True,
         collate_fn=None,
     )
-    return train_loader, val_loader
+    train_loader_eer = DataLoader(
+        dataset=train_dataset_eer,
+        batch_size=cfg.train.batch_size,   
+        shuffle=False,
+        num_workers=cfg.train.num_workers,      
+        pin_memory=True,
+        drop_last=True,
+        collate_fn=None,
+    )
+    val_loader_eer = DataLoader(
+        dataset=val_dataset_eer,
+        batch_size=cfg.train.batch_size,   
+        shuffle=False,
+        num_workers=cfg.train.num_workers,      
+        pin_memory=True,
+        drop_last=True,
+        collate_fn=None,
+    )
+    return train_loader, val_loader, train_loader_eer, val_loader_eer
 
 
 def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, device, cfg):
@@ -112,12 +172,11 @@ def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, de
     all_iter = len(train_loader)
     print("iter start")
     model.train()
-    for batch in tqdm(train_loader):
+    for batch in train_loader:
         iter_cnt += 1
 
         feature = batch
         feature = feature.to(device)
-        print(f"feature = {feature.shape}")
 
         batch_size = feature.shape[0]
         data_cnt += batch_size
@@ -143,7 +202,7 @@ def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, de
         wandb.log({"train_iter_loss": loss.item()})
 
         if cfg.train.debug:
-            if iter_cnt > 1:
+            if iter_cnt > 5:
                 break
 
     # 平均
@@ -157,12 +216,11 @@ def calc_val_loss(model, val_loader, loss_f_soft, loss_f_cont, device, cfg):
     iter_cnt = 0
     print("--- validation ---")
     model.eval()
-    for batch in tqdm(val_loader):
+    for batch in val_loader:
         iter_cnt += 1
 
         feature = batch
         feature = feature.to(device)
-        print(f"feature = {feature.shape}")
 
         batch_size = feature.shape[0]
         data_cnt += batch_size
@@ -179,11 +237,66 @@ def calc_val_loss(model, val_loader, loss_f_soft, loss_f_cont, device, cfg):
         # writer.log_metric("val_iter_loss", loss.item())
 
         if cfg.train.debug:
-            if iter_cnt > 1:
+            if iter_cnt > 5:
                 break
-
+                
     val_loss /= iter_cnt
     return val_loss
+
+
+def _calc_eer(model, data_loader, device):
+    """
+    EERを求めるために考えましたが,そもそも話者ごとのコサイン類似度のラベルが分からないのでどうしたらいいのか検討中です
+    """
+    model.eval()
+    scores = []
+    labels = []
+    for batch in data_loader:
+        feature = batch
+        feature = feature.to(device)
+        with torch.no_grad():
+            x_vec, out = model(feature)
+        
+        # 同じ話者の2発話なのでラベルは1
+        score = F.cosine_similarity(x_vec[:, 0, :], x_vec[:, 1, :], dim=1)
+        label = torch.ones_like(score)
+        scores.append(score.item())
+        labels.append(label.item())
+
+        # 異なる話者の2発話の場合も計算するため，一度シャッフル
+        B, U, _ = x_vec.shape
+        speaker = torch.arange(B).unsqueeze(1)
+        pairs = []
+        for i in range(B):
+            for j in range(U):
+                pairs.append(x_vec[i, j, :], speaker[i])
+        pairs = random.sample(pairs, len(pairs))
+
+        # 異なる話者の場合はlabelが-1にならないので違いました…
+        for i in range(0, len(pairs), 2):
+            x_vec1, speaker1 = pairs[i]
+            x_vec2, speaker2 = pairs[i + 1]
+            score = F.cosine_similarity(x_vec1, x_vec2, dim=0)
+            if speaker1 - speaker2 == 0:
+                label = 1
+            else:
+                label = -1
+            scores.append(score)
+            labels.append(label)
+
+    scores = np.array(scores)
+    labels = np.ones_like(scores)   # 同じ話者の2発話なのでコサイン類似度は1になるはず
+    fpr, tpr, thresholds = roc_curve(labels, scores)
+    eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
+    thresh = interp1d(fpr, thresholds)(eer)
+    return eer, thresh
+
+
+def calc_eer(model, train_loader_eer, val_loader_eer, device, cfg):
+    print("--- calc EER ---")
+    train_eer = _calc_eer(model, train_loader_eer, device)
+    val_eer = _calc_eer(model, val_loader_eer, device)
+    wandb.log({"train_EER": train_eer})
 
 
 @hydra.main(config_name="config", config_path="conf")
@@ -211,7 +324,7 @@ def main(cfg):
     os.makedirs(ckpt_path, exist_ok=True)
 
     # dataloader作成
-    train_loader, val_loader = make_train_val_loader(
+    train_loader, val_loader, train_loader_eer, val_loader_eer = make_train_val_loader(
         data_path=cfg.train.data_path, 
         cfg=cfg, 
         device=device
@@ -293,7 +406,7 @@ def main(cfg):
 
         
         # モデルパラメータの保存
-        # torch.save(model.state_dict(), os.path.join(save_path, "model.pth"))
+        torch.save(model.state_dict(), os.path.join(save_path, f"model_{cfg.model.name}.pth"))
         # artifact = wandb.Artifact('model', type='model')
         # artifact.add_file(os.path.join(save_path, "model.pth"))
         # wandb.log_artifact(artifact)

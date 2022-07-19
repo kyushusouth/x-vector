@@ -150,7 +150,7 @@ class GE2Etrans:
         assert wav.shape[1] == self.length, "time adjust error"
         return wav
 
-    def __call__(self, utterance, feature_type):
+    def __call__(self, utterance, feature_type, speaker):
         features = []
         error_count = 0
         for i in range(len(utterance)):
@@ -227,11 +227,11 @@ class GE2Etrans:
             # 学習時はn_utteranceだけ取得する
             if self.calc_eer:
                 if len(features) == 2:
-                    print(f"error_count = {error_count}, all_data = {len(utterance)}")
+                    # print(f"error_count = {error_count}, all_data = {len(utterance)}")
                     break
             else:
                 if len(features) == self.n_utterance:
-                    print(f"error_count = {error_count}, all_data = {len(utterance)}")
+                    # print(f"error_count = {error_count}, all_data = {len(utterance)}")
                     break
         
         feature = np.stack(features)

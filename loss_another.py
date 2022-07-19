@@ -19,8 +19,8 @@ class GE2ELoss(nn.Module):
             - init_b (float): definies the initial value of b in Equation (5) of [1]
         '''
         super(GE2ELoss, self).__init__()
-        self.w = nn.Parameter(torch.tensor(init_w))
-        self.b = nn.Parameter(torch.tensor(init_b))
+        self.w = nn.Parameter(torch.tensor(init_w), requires_grad=True)
+        self.b = nn.Parameter(torch.tensor(init_b), requires_grad=True)
         self.loss_method = loss_method
 
         assert self.loss_method in ['softmax', 'contrast']
@@ -98,7 +98,7 @@ class GE2ELoss(nn.Module):
 
         #Calculate the cosine similarity matrix
         cos_sim_matrix = self.calc_cosine_sim(dvecs, centroids)
-        torch.clamp(self.w, 1e-6)
+        torch.clamp(self.w, 1e-6)   # wが負の値にならないように制限
         cos_sim_matrix = cos_sim_matrix * self.w + self.b
         L = self.embed_loss(dvecs, cos_sim_matrix)
         return L.sum()

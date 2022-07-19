@@ -95,8 +95,8 @@ elif [ "$1" = 'svr2dev' ]; then
         --exclude='.DS_Store' --exclude='Thumbs.db' \
         --exclude='.git' --exclude='.gitignore' \
         --exclude='__pycache__' --exclude='*.pyc' --exclude='.ipynb_checkpoints' --exclude='.pytest_cache/' \
-        --exclude='check_point/' --exclude='multirun/' --exclude='outputs/' --exclude='*.pth' --exclude='wandb'\
-        --exclude='*.cpt' --exclude='*.ckpt' --exclude='result/' --exclude='dataset/' #--exclude='conf/'
+        --exclude='checkpoint/' --exclude='multirun/' --exclude='outputs/' --exclude='*.pth' --exclude='wandb'\
+        --exclude='*.cpt' --exclude='*.ckpt' --exclude='result/' --exclude='dataset/' --exclude='conf/'
 
 # Server directory -> Any directory
 # Usage: ` ./rsyncito.sh svr2any your/target/directory/path/ `

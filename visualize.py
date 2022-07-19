@@ -64,7 +64,7 @@ class TestDataset(Dataset):
     def __getitem__(self, idx):
         speaker = self.speakers[idx]
         utterance = get_utterance(speaker)
-        feature = self.transform(utterance, self.name)
+        feature = self.transform(utterance, self.name, speaker)
         return feature, Path(speaker).name
 
 
@@ -104,7 +104,7 @@ def main(cfg):
         out_channels=cfg.model.out_channels,
     ).to(device)
 
-    model_path = Path("/home/usr4/r70264c/x_vector/checkpoint/2022:07:05_18-59-17/mspec_20.ckpt")
+    model_path = Path("/home/usr4/r70264c/x_vector/checkpoint/2022:07:08_08-25-31/mspec_40.ckpt")
     model_key = torch.load(model_path)
     model.load_state_dict(model_key["model"])
 
@@ -123,17 +123,13 @@ def main(cfg):
 
         x_vec = x_vec.squeeze(0)
         x_vec = x_vec.to('cpu').detach().numpy().copy()
-        print(x_vec.shape)
         x_vecs.append(x_vec)
         speaker_labels.append(speaker)
 
     assert len(x_vecs) == len(speaker_labels)
     x_vec = np.concatenate(x_vecs, axis=0)
-    print(f"x_vec = {x_vec.shape}")
-    print(f"speaker_labels = {speaker_labels}")
     tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
     x_vec_trans = tsne.fit_transform(x_vec)
-    print(f"x_vec_trans = {x_vec_trans.shape}")
     
     fig, ax = plt.subplots(1, 1, figsize=(6, 8))
     for i in range(len(speaker_labels)):

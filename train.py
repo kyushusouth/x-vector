@@ -15,10 +15,13 @@
 """
 
 
+import sched
+from tkinter import Label
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import mlflow
 from datetime import datetime
+from sqlalchemy import lateral
 import torchaudio
 import wandb
 
@@ -52,8 +55,9 @@ torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
 
 
-def save_checkpoint(model, optimizer, scheduler, epoch, ckpt_path):
+def save_checkpoint(model, loss_f, optimizer, scheduler, epoch, ckpt_path):
 	torch.save({'model': model.state_dict(),
+                'loss_f': loss_f.state_dict(),
 				'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler.state_dict(),
                 "random": random.getstate(),
@@ -84,11 +88,6 @@ def make_train_val_loader(data_path, cfg, device):
         cfg=cfg,
         calc_eer=True,
     )
-    # trans_val = GE2Etrans_val(
-    #     musan_path=cfg.train.musan_path,
-    #     ir_path=cfg.train.ir_path,
-    #     cfg=cfg,
-    # )
 
     # 元となるデータセットの作成(transformは必ずNoneでお願いします)
     dataset = GE2EDataset(
@@ -130,7 +129,8 @@ def make_train_val_loader(data_path, cfg, device):
         dataset=train_dataset,
         batch_size=cfg.train.batch_size,   
         shuffle=True,
-        num_workers=cfg.train.num_workers,      
+        # num_workers=cfg.train.num_workers,      
+        num_workers=os.cpu_count(),
         pin_memory=True,
         drop_last=True,
         collate_fn=None,
@@ -139,7 +139,8 @@ def make_train_val_loader(data_path, cfg, device):
         dataset=val_dataset,
         batch_size=cfg.train.batch_size,   
         shuffle=False,
-        num_workers=cfg.train.num_workers,      
+        # num_workers=cfg.train.num_workers,      
+        num_workers=os.cpu_count(),
         pin_memory=True,
         drop_last=True,
         collate_fn=None,
@@ -165,13 +166,14 @@ def make_train_val_loader(data_path, cfg, device):
     return train_loader, val_loader, train_loader_eer, val_loader_eer
 
 
-def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, device, cfg):
+def train_one_epoch(model, train_loader, optimizer, loss_f, device, cfg):
     epoch_loss = 0
     data_cnt = 0
     iter_cnt = 0
     all_iter = len(train_loader)
     print("iter start")
     model.train()
+
     for batch in train_loader:
         iter_cnt += 1
 
@@ -184,22 +186,43 @@ def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, de
         # 出力
         x_vec, out = model(feature)
 
+        ########################
+        # 損失からの最適化
+        ########################
         # 損失
-        softmax_loss = loss_f_soft(x_vec)
-        # contrast_loss = loss_f_cont(x_vec)
-        # loss = softmax_loss + contrast_loss
-        loss = softmax_loss
+        loss = loss_f(x_vec)
         
         optimizer.zero_grad()
         loss.backward()
-        clip_grad_norm_(model.parameters(), cfg.train.max_norm)
+        clip_grad_norm_(list(model.parameters()) + list(loss_f.parameters()), cfg.train.max_norm)
         optimizer.step()
 
         epoch_loss += loss.item()
         
-        # wandb.log({"softmax_loss": softmax_loss.item()})
-        # wandb.log({"contrast_loss": contrast_loss.item()})
+        # ######################
+        # # 精度計算
+        # ###################### 
+        # # 話者認識のラベルになるOne-hot表現を求める
+        # label = torch.tensor([i for i in range(feature.shape[0])]).to(device)
+        # label = F.one_hot(label, num_classes=len(label)).to(device)     # (B, B)
+        # label = label.unsqueeze(1)      # (B, 1, B)
+
+        # # 最大値のインデックスを取得
+        # label = torch.argmax(label, dim=-1)     # (B, 1)
+        # out = torch.argmax(out, dim=-1)     # (B, n_utterance)
+
+        # # 引き算して0になれば正解なので，正解を1，ハズレを0に置き換え
+        # score = out - label
+        # score = torch.where(score == 0, 1, 0)
+
+        # # scoreの合計(正解数)と全要素数から精度accuracyを計算
+        # num_answer = score.numel()
+        # score = torch.sum(score)
+        # accuracy = score / num_answer * 100
+
         wandb.log({"train_iter_loss": loss.item()})
+        # wandb.log({"train_iter_accuracy": accuracy.item()})
+    
 
         if cfg.train.debug:
             if iter_cnt > 5:
@@ -210,12 +233,13 @@ def train_one_epoch(model, train_loader, optimizer, loss_f_soft, loss_f_cont, de
     return epoch_loss
 
 
-def calc_val_loss(model, val_loader, loss_f_soft, loss_f_cont, device, cfg):
+def calc_val_loss(model, val_loader, loss_f, device, cfg):
     val_loss = 0
     data_cnt = 0
     iter_cnt = 0
     print("--- validation ---")
     model.eval()
+
     for batch in val_loader:
         iter_cnt += 1
 
@@ -228,13 +252,36 @@ def calc_val_loss(model, val_loader, loss_f_soft, loss_f_cont, device, cfg):
         with torch.no_grad():
             x_vec, out = model(feature)
         
-        # loss = loss_f_soft(x_vec) + loss_f_cont(x_vec)
-        loss = loss_f_soft(x_vec)
+        ########################
+        # 損失
+        ########################
+        loss = loss_f(x_vec)
 
         val_loss += loss.item()
 
+        # ########################
+        # # 精度計算
+        # ######################## 
+        # # 話者認識のラベルになるOne-hot表現を求める
+        # label = torch.tensor([i for i in range(feature.shape[0])]).to(device)
+        # label = F.one_hot(label, num_classes=len(label)).to(device)     # (B, B)
+        # label = label.unsqueeze(1)      # (B, 1, B)
+
+        # # 最大値のインデックスを取得
+        # label = torch.argmax(label, dim=-1)     # (B, 1)
+        # out = torch.argmax(out, dim=-1)     # (B, n_utterance)
+
+        # # 引き算して0になれば正解なので，正解を1，ハズレを0に置き換え
+        # score = out - label
+        # score = torch.where(score == 0, 1, 0)
+
+        # # scoreの合計(正解数)と全要素数から精度accuracyを計算
+        # num_answer = score.numel()
+        # score = torch.sum(score)
+        # accuracy = score / num_answer * 100
+
         wandb.log({"val_iter_loss": loss.item()})
-        # writer.log_metric("val_iter_loss", loss.item())
+        # wandb.log({"val_iter_accuracy": accuracy.item()})
 
         if cfg.train.debug:
             if iter_cnt > 5:
@@ -327,12 +374,11 @@ def main(cfg):
     train_loader, val_loader, train_loader_eer, val_loader_eer = make_train_val_loader(
         data_path=cfg.train.data_path, 
         cfg=cfg, 
-        device=device
+        device=device,
     )
 
     # 損失関数
-    loss_f_soft = GE2ELoss(init_w=10.0, init_b=-5.0, loss_method='softmax') # for softmax loss
-    loss_f_cont = GE2ELoss(init_w=10.0, init_b=-5.0, loss_method='contrast') # for contrast loss
+    loss_f = GE2ELoss(init_w=10.0, init_b=-5.0, loss_method=cfg.train.loss_method)
 
     # training
     with wandb.init(**cfg.wandb.setup, config=wandb_cfg) as run:
@@ -340,12 +386,12 @@ def main(cfg):
         model = TDNN(
             in_channels=cfg.model.in_channels,
             n_dim=cfg.model.n_dim,
-            out_channels=cfg.model.out_channels,
+            out_channels=cfg.train.batch_size,
         ).to(device)
 
         # 最適化手法
         optimizer = torch.optim.Adam(
-            model.parameters(), 
+            list(model.parameters()) + list(loss_f.parameters()), 
             lr=cfg.train.lr, 
             betas=(cfg.train.beta_1, cfg.train.beta_2),
             weight_decay=cfg.train.weight_decay,
@@ -353,11 +399,27 @@ def main(cfg):
         )
 
         # scheduler
-        scheduler = torch.optim.lr_scheduler.StepLR(
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer=optimizer,
-            step_size=cfg.train.max_epoch // 4,
+            milestones=cfg.train.milestones,
             gamma=cfg.train.lr_decay_rate
         )
+
+        last_epoch = 0
+
+        if cfg.train.check_point_start:
+            checkpoint_path = cfg.train.ckpt_load_path
+            checkpoint = torch.load(checkpoint_path)
+            model.load_state_dict(checkpoint["model"])
+            loss_f.load_state_dict(checkpoint["loss_f"])
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            scheduler.load_state_dict(checkpoint["scheduler"])
+            random.setstate(checkpoint["random"])
+            np.random.set_state(checkpoint["np_random"])
+            torch.set_rng_state(checkpoint["torch"])
+            torch.random.set_rng_state(checkpoint["torch_random"])
+            torch.cuda.set_rng_state(checkpoint["cuda_random"])
+            last_epoch = checkpoint["epoch"]
 
         wandb.watch(model, **cfg.wandb.watch)
 
@@ -366,38 +428,35 @@ def main(cfg):
         else:
             max_epoch = cfg.train.max_epoch
 
-        model.train()
-        for epoch in range(max_epoch):
-            print(f"##### {epoch} #####")
+        for epoch in range(max_epoch - last_epoch):
+            print(f"##### {epoch + last_epoch} #####")
+            print(f"lr = {scheduler.get_last_lr()}")
             epoch_loss = train_one_epoch(
                 model=model, 
                 train_loader=train_loader, 
                 optimizer=optimizer, 
-                loss_f_soft=loss_f_soft, 
-                loss_f_cont=loss_f_cont, 
+                loss_f=loss_f, 
                 device=device, 
                 cfg=cfg,
             )
             print(f"epoch_loss = {epoch_loss}")
-            # writer.log_metric("epoch_loss", epoch_loss)
-
+            
             if epoch % cfg.train.val_step == 0:
                 val_loss = calc_val_loss(
                     model=model, 
                     val_loader=val_loader, 
-                    loss_f_soft=loss_f_soft, 
-                    loss_f_cont=loss_f_cont, 
+                    loss_f=loss_f, 
                     device=device, 
                     cfg=cfg,
                 )
                 print(f"val_loss = {val_loss}")
-                # writer.log_metric("val_loss", val_loss)
             
             scheduler.step()
 
             if epoch % cfg.train.ckpt_step == 0:
                 save_checkpoint(
                     model=model,
+                    loss_f=loss_f,
                     optimizer=optimizer,
                     scheduler=scheduler,
                     epoch=epoch,
